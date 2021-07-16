@@ -7,10 +7,12 @@ import java.io.File
 @Suppress("UnstableApiUsage")
 open class JarSearchableOptionsTask : Jar() {
 
+    private val buildDir = project.buildDir.canonicalPath
+
     init {
         val pluginJarFiles = mutableSetOf<String>()
 
-        from({
+        this.from({
             include {
                 when {
                     it.isDirectory -> true
@@ -29,10 +31,10 @@ open class JarSearchableOptionsTask : Jar() {
                     }
                 }
             }
-            "${project.buildDir}/${IntelliJPluginConstants.SEARCHABLE_OPTIONS_DIR_NAME}"
+            "$buildDir/${IntelliJPluginConstants.SEARCHABLE_OPTIONS_DIR_NAME}"
         })
 
-        eachFile { it.path = "search/$name" }
+        this.eachFile { it.path = "search/${it.name}" }
         includeEmptyDirs = false
     }
 }

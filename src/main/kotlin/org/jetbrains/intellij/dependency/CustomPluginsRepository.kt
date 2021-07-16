@@ -1,17 +1,14 @@
 package org.jetbrains.intellij.dependency
 
-import de.undercouch.gradle.tasks.download.org.apache.commons.codec.binary.Hex
+import com.jetbrains.plugin.structure.intellij.repository.CustomPluginRepositoryListingParser
+import com.jetbrains.plugin.structure.intellij.repository.CustomPluginRepositoryListingType
 import org.gradle.api.Project
+import org.jetbrains.intellij.create
 import org.jetbrains.intellij.debug
-import org.jetbrains.intellij.model.Category
-import org.jetbrains.intellij.model.PluginRepository
-import org.jetbrains.intellij.model.Plugins
-import org.jetbrains.intellij.parseXml
+import org.jetbrains.intellij.warn
 import java.io.File
 import java.net.URI
-import java.nio.file.Files
-import java.nio.file.Paths
-import java.security.MessageDigest
+import java.net.URL
 
 class CustomPluginsRepository(repositoryUrl: String) : PluginsRepository {
 
@@ -25,54 +22,49 @@ class CustomPluginsRepository(repositoryUrl: String) : PluginsRepository {
             pluginsXmlUri = uri
         } else {
             this.repositoryUrl = repositoryUrl
-            pluginsXmlUri =
-                URI(uri.scheme, uri.userInfo, uri.host, uri.port, "${uri.path}/", uri.query, uri.fragment).resolve("updatePlugins.xml")
+            pluginsXmlUri = uri.run { URI(scheme, userInfo, host, port, "$path/", query, fragment).resolve("updatePlugins.xml") }
         }
     }
 
-    override fun resolve(project: Project, plugin: PluginDependencyNotation): File? {
-        debug(project, "Loading list of plugins from: $pluginsXmlUri")
-        var downloadUrl: String?
+    override fun resolve(project: Project, plugin: PluginDependencyNotation, context: String?): File? {
+        debug(context, "Loading list of plugins from: $pluginsXmlUri")
+        val url = pluginsXmlUri.toURL()
+        val downloadUrl = resolveDownloadUrl(url, plugin, CustomPluginRepositoryListingType.PLUGIN_REPOSITORY)
+            ?: resolveDownloadUrl(url, plugin, CustomPluginRepositoryListingType.SIMPLE)
+            ?: return null
 
-        // Try to parse file as <plugin-repository>
-        val pluginRepository = parseXml(pluginsXmlUri.toURL().openStream(), PluginRepository::class.java)
-        downloadUrl = pluginRepository.categories.flatMap(Category::plugins).find {
-            it.id.equals(plugin.id, true) && it.version.equals(plugin.version, true)
-        }?.downloadUrl?.let { "$repositoryUrl/$it" }
-
-        if (downloadUrl == null) {
-            // Try to parse XML file as <plugins>
-            val plugins = parseXml(pluginsXmlUri.toURL().openStream(), Plugins::class.java)
-            downloadUrl = plugins.items.find {
-                it.id.equals(plugin.id, true) && it.version.equals(plugin.version, true)
-            }?.url
-        }
-
-        if (downloadUrl == null) {
-            return null
-        }
-
-        return downloadZipArtifact(project, downloadUrl, plugin)
+        return downloadZipArtifact(project, downloadUrl, plugin, context)
     }
 
-    private fun getCacheDirectoryPath(project: Project): String {
-        // todo: a better way to define cache directory
-        val gradleHomePath = project.gradle.gradleUserHomeDir.absolutePath
-        val mavenCacheDirectoryPath = Paths.get(gradleHomePath, "caches/modules-2/files-2.1").toString()
-        val digest = MessageDigest.getInstance("SHA-1").digest(repositoryUrl.toByteArray())
-        val hash = Hex.encodeHex(digest).toString()
-        return Paths.get(mavenCacheDirectoryPath, "com.jetbrains.intellij.idea", hash).toString()
-    }
+    private fun resolveDownloadUrl(url: URL, plugin: PluginDependencyNotation, type: CustomPluginRepositoryListingType) =
+        CustomPluginRepositoryListingParser
+            .parseListOfPlugins(url.readText(), url, URL(repositoryUrl), type)
+            .find { it.pluginId.equals(plugin.id, true) && it.version.equals(plugin.version, true) }
+            ?.downloadUrl
 
-    private fun downloadZipArtifact(project: Project, url: String, plugin: PluginDependencyNotation): File {
-        val targetFile = Paths.get(getCacheDirectoryPath(project), "com.jetbrains.plugins", "${plugin.id}-${plugin.version}.zip").toFile()
-        if (!targetFile.isFile) {
-            targetFile.parentFile.mkdirs()
-            Files.copy(URI.create(url).toURL().openStream(), targetFile.toPath())
+    private fun downloadZipArtifact(project: Project, url: URL, plugin: PluginDependencyNotation, context: String?): File? {
+        val repository = project.repositories.ivy { ivy ->
+            ivy.url = url.toURI()
+            ivy.patternLayout { it.artifact("") }
+            ivy.metadataSources { it.artifact() }
         }
-        return targetFile
+        val dependency = project.dependencies.create(
+            group = "com.jetbrains.plugins",
+            name = plugin.id,
+            version = plugin.version,
+            extension = "zip",
+        )
+
+        return try {
+            project.configurations.detachedConfiguration(dependency).singleFile
+        } catch (e: Exception) {
+            warn(context, "Cannot download plugin from custom repository: ${plugin.id}:${plugin.version}", e)
+            null
+        } finally {
+            project.repositories.remove(repository)
+        }
     }
 
-    override fun postResolve(project: Project) {
+    override fun postResolve(project: Project, context: String?) {
     }
 }

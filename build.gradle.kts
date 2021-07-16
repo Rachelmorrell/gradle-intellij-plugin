@@ -1,21 +1,17 @@
+@file:Suppress("UnstableApiUsage")
+
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+fun properties(key: String) = project.findProperty(key)?.toString()
+
 plugins {
-    kotlin("jvm") version "1.5.0"
+    kotlin("jvm") version "1.5.21"
     id("java-gradle-plugin")
     id("maven-publish")
-    id("com.gradle.plugin-publish") version "0.14.0"
+    id("com.gradle.plugin-publish") version "0.15.0"
     id("synapticloop.documentr") version "3.1.0"
     id("com.github.breadmoirai.github-release") version "2.2.12"
-    id("org.jetbrains.changelog") version "1.1.2"
-}
-
-plugins.withType<JavaPlugin> {
-    tasks {
-        withType<KotlinCompile> {
-            kotlinOptions.jvmTarget = "1.8"
-        }
-    }
+    id("org.jetbrains.changelog") version "1.2.0"
 }
 
 repositories {
@@ -24,36 +20,39 @@ repositories {
 }
 
 dependencies {
-    api(gradleApi())
-    implementation("org.jetbrains:marketplace-zip-signer:0.1.3")
-    implementation("org.jetbrains:annotations:19.0.0")
-    implementation("org.jetbrains.intellij.plugins:structure-base:3.171")
-    implementation("org.jetbrains.intellij.plugins:structure-intellij:3.171")
+    implementation("org.jetbrains:marketplace-zip-signer:0.1.5") {
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    implementation("org.jetbrains:annotations:21.0.0")
+    implementation("org.jetbrains.intellij.plugins:structure-base:3.194") {
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    implementation("org.jetbrains.intellij.plugins:structure-intellij:3.194") {
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    implementation("javax.xml.bind:jaxb-api:2.3.1")
     // should be changed together with plugin-repository-rest-client
     implementation("org.jetbrains.intellij:blockmap:1.0.5") {
         exclude(group = "org.jetbrains.kotlin")
     }
-    implementation("org.jetbrains.intellij:plugin-repository-rest-client:2.0.15") {
+    implementation("org.jetbrains.intellij:plugin-repository-rest-client:2.0.20") {
         exclude(group = "org.jetbrains.kotlin")
     }
-    implementation("de.undercouch:gradle-download-task:4.0.4")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.12.1")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.12.1")
-    implementation("com.fasterxml.woodstox:woodstox-core:6.2.4")
 
     testImplementation(gradleTestKit())
     testImplementation(kotlin("test"))
     testImplementation(kotlin("test-junit"))
 }
 
-version = if (project.property("snapshot")?.toString()?.toBoolean() == true) {
-    "${project.property("snapshotVersion")}-SNAPSHOT"
-} else {
-    project.property("version").toString()
-}
+version = when (properties("snapshot")?.toBoolean() ?: false) {
+    true -> "${properties("snapshotVersion")}-SNAPSHOT"
+    false -> properties("version")
+} ?: ""
 group = "org.jetbrains.intellij.plugins"
 description = """
-**This project requires Gradle 5.1 or newer**
+**This project requires Gradle 6.6 or newer**
+
+When upgrading to 1.x version, please make sure to follow migration guide to adjust your existing build script: https://lp.jetbrains.com/gradle-intellij-plugin
 
 This plugin allows you to build plugins for IntelliJ Platform using specified IntelliJ SDK and bundled/3rd-party plugins.
 
@@ -84,10 +83,24 @@ val cacheIntolerantTest = tasks.register<Test>("cacheIntolerantTest") {
     filter.isFailOnNoMatchingTests = false
 }
 
-tasks.test {
-    configureTests(this)
-    exclude("**/DownloadIntelliJSpec.class")
-    dependsOn(cacheIntolerantTest)
+tasks {
+    withType<KotlinCompile> {
+        kotlinOptions {
+            jvmTarget = "1.8"
+            apiVersion = "1.3"
+        }
+    }
+
+    wrapper {
+        gradleVersion = properties("gradleVersion")
+        distributionUrl = "https://cache-redirector.jetbrains.com/services.gradle.org/distributions/gradle-$gradleVersion-all.zip"
+    }
+
+    test {
+        configureTests(this)
+        exclude("**/DownloadIntelliJSpec.class")
+        dependsOn(cacheIntolerantTest)
+    }
 }
 
 fun configureTests(testTask: Test) {
@@ -96,7 +109,10 @@ fun configureTests(testTask: Test) {
         File(testGradleHomePath).mkdir()
     }
     testTask.systemProperties["test.gradle.home"] = testGradleHomePath
-    testTask.systemProperties["plugins.repository"] = project.property("pluginsRepository")
+    testTask.systemProperties["test.kotlin.version"] = properties("kotlinVersion")
+    testTask.systemProperties["test.gradle.default"] = properties("gradleVersion")
+    testTask.systemProperties["test.gradle.version"] = properties("gradleVersion")
+    testTask.systemProperties["plugins.repository"] = properties("pluginsRepository")
     testTask.outputs.dir(testGradleHomePath)
 }
 
@@ -116,8 +132,8 @@ publishing {
             name = "snapshot"
             url = uri("https://oss.sonatype.org/content/repositories/snapshots/")
             credentials {
-                username = project.property("ossrhUsername") as String
-                password = project.property("ossrhPassword") as String
+                username = properties("ossrhUsername")
+                password = properties("ossrhPassword")
             }
         }
     }
@@ -157,20 +173,21 @@ publishing {
                         name.set("Alexander Zolotov")
                         email.set("zolotov@jetbrains.com")
                     }
+                    developer {
+                        id.set("hsz")
+                        name.set("Jakub Chrzanowski")
+                        email.set("jakub.chrzanowski@jetbrains.com")
+                    }
                 }
             }
         }
     }
 }
 
-tasks.wrapper {
-    gradleVersion = "6.8"
-    distributionUrl = "https://cache-redirector.jetbrains.com/services.gradle.org/distributions/gradle-${gradleVersion}-all.zip"
-}
-
 changelog {
-    version = "${project.version}"
-    path = "${project.projectDir}/CHANGES.md"
+    unreleasedTerm.set("next")
+    version.set("${project.version}")
+    path.set("${project.projectDir}/CHANGES.md")
 }
 
 githubRelease {
@@ -180,7 +197,7 @@ githubRelease {
         ""
     }
 
-    setToken(project.property("githubToken") as String)
+    setToken(properties("githubToken"))
     owner.set("jetbrains")
     repo.set("gradle-intellij-plugin")
     body.set(releaseNote)

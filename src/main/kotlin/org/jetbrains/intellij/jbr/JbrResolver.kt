@@ -1,25 +1,36 @@
 package org.jetbrains.intellij.jbr
 
-import de.undercouch.gradle.tasks.download.DownloadAction
-import org.gradle.api.Project
-import org.gradle.api.Task
-import org.gradle.api.plugins.ExtensionAware
+import org.gradle.api.Incubating
+import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.artifacts.dsl.DependencyHandler
+import org.gradle.api.artifacts.dsl.RepositoryHandler
+import org.gradle.api.file.ArchiveOperations
+import org.gradle.api.file.FileSystemOperations
 import org.gradle.internal.os.OperatingSystem
-import org.gradle.util.VersionNumber
+import org.gradle.process.ExecOperations
 import org.jetbrains.intellij.IntelliJPluginConstants
-import org.jetbrains.intellij.untar
+import org.jetbrains.intellij.Version
+import org.jetbrains.intellij.create
+import org.jetbrains.intellij.extractArchive
 import org.jetbrains.intellij.warn
 import java.io.File
-import java.io.IOException
-import java.nio.file.Paths
+import java.net.URI
+import java.nio.file.Path
+import javax.inject.Inject
 
-class JbrResolver(val project: Project, val task: Task?, private val jreRepository: String?) {
+@Incubating
+open class JbrResolver @Inject constructor(
+    private val jreRepository: String,
+    private val isOffline: Boolean,
+    private val context: String?,
+    private val repositoryHandler: RepositoryHandler,
+    private val dependencyHandler: DependencyHandler,
+    private val configurationContainer: ConfigurationContainer,
+    private val archiveOperations: ArchiveOperations,
+    private val execOperations: ExecOperations,
+    private val fileSystemOperations: FileSystemOperations,
+) {
 
-    private val context: ExtensionAware = task ?: project
-    private val cacheDirectoryPath = Paths.get(
-        project.gradle.gradleUserHomeDir.absolutePath,
-        "caches/modules-2/files-2.1/com.jetbrains/jbre",
-    ).toString()
     private val operatingSystem = OperatingSystem.current()
 
     fun resolve(version: String?): Jbr? {
@@ -30,71 +41,64 @@ class JbrResolver(val project: Project, val task: Task?, private val jreReposito
             ("8".takeIf { version.startsWith('u') } ?: "") + version,
             operatingSystem,
         )
-        val javaDir = File(cacheDirectoryPath, jbrArtifact.name)
-        if (javaDir.exists()) {
-            if (javaDir.isDirectory) {
-                return fromDir(javaDir, version)
-            }
-            javaDir.delete()
-        }
 
-        getJavaArchive(jbrArtifact)?.let {
-            untar(project, it, javaDir)
-            it.delete()
-            return fromDir(javaDir, version)
+        return getJavaArchive(jbrArtifact)?.let {
+            val javaDir = File(it.path.replaceAfter(jbrArtifact.name, "")).resolve("extracted")
+            extractArchive(it, javaDir, archiveOperations, execOperations, fileSystemOperations, context)
+            fromDir(javaDir, version)
         }
-        return null
     }
 
     private fun fromDir(javaDir: File, version: String): Jbr? {
         val javaExecutable = findJavaExecutable(javaDir)
         if (javaExecutable == null) {
-            warn(context, "Cannot find java executable in $javaDir")
+            warn(context, "Cannot find java executable in: $javaDir")
             return null
         }
-        return Jbr(version, javaDir, findJavaExecutable(javaDir))
+        return Jbr(version, javaDir, javaExecutable.toFile().absolutePath)
     }
 
     private fun getJavaArchive(jbrArtifact: JbrArtifact): File? {
-        val artifactName = jbrArtifact.name
-        val archiveName = "${artifactName}.tar.gz"
-        val javaArchive = File(cacheDirectoryPath, archiveName)
-        if (javaArchive.exists()) {
-            return javaArchive
-        }
-
-        if (project.gradle.startParameter.isOffline) {
-            warn(context, "Cannot download JetBrains Java Runtime $artifactName. Gradle runs in offline mode.")
+        if (isOffline) {
+            warn(context, "Cannot download JetBrains Java Runtime '${jbrArtifact.name}'. Gradle runs in offline mode.")
             return null
         }
 
-        val url = "${jreRepository ?: jbrArtifact.repositoryUrl}/$archiveName"
+        val url = jreRepository.takeIf { it.isNotEmpty() } ?: jbrArtifact.repositoryUrl
+        val repository = repositoryHandler.ivy { ivy ->
+            ivy.url = URI(url)
+            ivy.patternLayout { it.artifact("[revision].tar.gz") }
+            ivy.metadataSources { it.artifact() }
+        }
+        val dependency = dependencyHandler.create(
+            group = "com.jetbrains",
+            name = "jbre",
+            version = jbrArtifact.name,
+            extension = "tar.gz",
+        )
+
         return try {
-            DownloadAction(project).apply {
-                src(url)
-                dest(javaArchive.absolutePath)
-                tempAndMove(true)
-                execute()
-            }
-            javaArchive
-        } catch (e: IOException) {
-            warn(context, "Cannot download JetBrains Java Runtime $artifactName", e)
+            configurationContainer.detachedConfiguration(dependency).singleFile
+        } catch (e: Exception) {
+            warn(context, "Cannot download JetBrains Java Runtime '${jbrArtifact.name}'", e)
             null
+        } finally {
+            repositoryHandler.remove(repository)
         }
     }
 
-    private fun findJavaExecutable(javaHome: File): String? {
+    private fun findJavaExecutable(javaHome: File): Path? {
         val root = getJbrRoot(javaHome)
         val jre = File(root, "jre")
         val java = File(
             jre.takeIf { it.exists() } ?: root,
             "bin/java" + (".exe".takeIf { operatingSystem.isWindows } ?: "")
         )
-        return java.absolutePath.takeIf { java.exists() }
+        return java.toPath().takeIf { java.exists() }
     }
 
     private fun getJbrRoot(javaHome: File): File {
-        val jbr = javaHome.listFiles()?.first { it.name == "jbr" || it.name == "jbrsdk" }
+        val jbr = javaHome.listFiles()?.firstOrNull { it.name == "jbr" || it.name == "jbrsdk" }
         if (jbr != null && jbr.exists()) {
             return when (operatingSystem.isMacOsX) {
                 true -> File(jbr, "Contents/Home")
@@ -121,23 +125,25 @@ class JbrResolver(val project: Project, val task: Task?, private val jreReposito
                     true -> version.substring(lastIndexOfB + 1)
                     else -> ""
                 }
-                val buildNumber = VersionNumber.parse(buildNumberString)
+                val buildNumber = Version.parse(buildNumberString)
                 val isJava8 = majorVersion.startsWith('8')
-                val repositoryUrl = IntelliJPluginConstants.DEFAULT_JBR_REPO
+                val repositoryUrl = IntelliJPluginConstants.DEFAULT_JBR_REPOSITORY
 
-                val oldFormat = prefix == "jbrex" || isJava8 && buildNumber < VersionNumber.parse("1483.24")
+                val oldFormat = prefix == "jbrex" || isJava8 && buildNumber < Version.parse("1483.24")
                 if (oldFormat) {
-                    return JbrArtifact("jbrex${majorVersion}b${buildNumberString}_${platform(operatingSystem)}_${arch(false)}", repositoryUrl)
+                    return JbrArtifact("jbrex${majorVersion}b${buildNumberString}_${platform(operatingSystem)}_${arch(false)}",
+                        repositoryUrl)
                 }
 
                 if (prefix.isEmpty()) {
                     prefix = when {
                         isJava8 -> "jbrx-"
-                        buildNumber < VersionNumber.parse("1319.6") -> "jbr-"
+                        buildNumber < Version.parse("1319.6") -> "jbr-"
                         else -> "jbr_jcef-"
                     }
                 }
-                return JbrArtifact("$prefix${majorVersion}-${platform(operatingSystem)}-${arch(isJava8)}-b${buildNumberString}", repositoryUrl)
+                return JbrArtifact("$prefix${majorVersion}-${platform(operatingSystem)}-${arch(isJava8)}-b${buildNumberString}",
+                    repositoryUrl)
             }
 
             private fun getPrefix(version: String) = when {

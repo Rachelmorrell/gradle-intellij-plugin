@@ -1,7 +1,6 @@
 package org.jetbrains.intellij
 
 import org.gradle.api.plugins.JavaPlugin
-import org.gradle.testkit.runner.TaskOutcome
 import org.jetbrains.intellij.pluginRepository.PluginRepositoryFactory
 import java.io.File
 import kotlin.test.Test
@@ -36,98 +35,6 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
     }
 
     @Test
-    fun `instrument code with nullability annotations`() {
-        buildFile.groovy("""
-            intellij {
-                instrumentCode = true
-            }
-        """)
-
-        writeJavaFile()
-
-        disableDebug("Gradle runs ant with another Java, that leads to NoSuchMethodError during the instrumentation")
-
-        val result = build("buildSourceSet", "--info")
-        assertTrue(result.output.contains("Added @NotNull assertions to 1 files"))
-    }
-
-    @Test
-    fun `instrument tests with nullability annotations`() {
-        writeTestFile()
-
-        buildFile.groovy("""
-            intellij {
-                instrumentCode = true
-            }
-        """)
-        disableDebug("Gradle runs ant with another Java, that leads to NoSuchMethodError during the instrumentation")
-
-        val result = build("buildTestSourceSet", "--info")
-        assertTrue(result.output.contains("Added @NotNull assertions to 1 files"))
-    }
-
-    @Test
-    fun `do not instrument code if option is set to false`() {
-        buildFile.groovy("""
-            intellij {
-                instrumentCode = false
-            }
-        """)
-
-        writeJavaFile()
-
-        val result = build("buildSourceSet", "--info")
-        assertFalse(result.output.contains("Added @NotNull"))
-    }
-
-    @Test
-    fun `do not instrument code on empty source sets`() {
-        val result = build("buildSourceSet", "--info")
-        assertFalse(result.output.contains("Compiling forms and instrumenting code"))
-    }
-
-    @Test
-    fun `instrument kotlin forms`() {
-        writeKotlinUIFile()
-
-        buildFile.groovy("""
-            intellij {
-                instrumentCode = true
-            }
-        """)
-
-        file("src/main/kotlin/pack/AppKt.form").xml("""<?xml version="1.0" encoding="UTF-8"?>
-            <form xmlns="http://www.intellij.com/uidesigner/form/" version="1" bind-to-class="pack.AppKt">
-                <grid id="27dc6" binding="panel" layout-manager="GridLayoutManager" row-count="1" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
-                    <margin top="0" left="0" bottom="0" right="0"/>
-                    <constraints>
-                        <xy x="20" y="20" width="500" height="400"/>
-                    </constraints>
-                    <properties/>
-                    <border type="none"/>
-                    <children/>
-                </grid>
-            </form>
-        """)
-
-        disableDebug("Gradle runs ant with another Java, that leads to NoSuchMethodError during the instrumentation")
-
-        val result = build("buildSourceSet", "--info")
-        result.output.contains("Compiling forms and instrumenting code")
-    }
-
-    @Test
-    fun `instrumentation does not invalidate compile tasks`() {
-        writeJavaFile()
-        disableDebug("Gradle runs ant with another Java, that leads to NoSuchMethodError during the instrumentation")
-
-        build("buildSourceSet")
-
-        val result = build("buildSourceSet")
-        assertEquals(TaskOutcome.UP_TO_DATE, result.task(":${JavaPlugin.CLASSES_TASK_NAME}")?.outcome)
-    }
-
-    @Test
     fun `patch test tasks`() {
         buildFile.groovy("""
             intellij {
@@ -157,17 +64,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
         buildFile.groovy("""
             intellij.plugins = ['copyright', 'org.jetbrains.postfixCompletion:0.8-beta']
             task printMainRuntimeClassPath { 
-                doLast { println 'runtime: ' + sourceSets.main.runtimeClasspath.asPath }
+                doLast { println 'runtimeOnly: ' + sourceSets.main.runtimeClasspath.asPath }
             }
             task printMainCompileClassPath { 
-                doLast { println 'compile: ' + sourceSets.main.compileClasspath.asPath }
+                doLast { println 'implementation: ' + sourceSets.main.compileClasspath.asPath }
             }
         """)
 
         val result = build("printMainRuntimeClassPath", "printMainCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
 
             assertTrue(compileClasspath.contains("copyright.jar"))
             assertFalse(runtimeClasspath.contains("copyright.jar"))
@@ -184,17 +91,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
             intellij.plugins = ['org.intellij.plugins.markdown:201.6668.74']
 
             task printMainRuntimeClassPath { 
-                doLast { println 'runtime: ' + sourceSets.main.runtimeClasspath.asPath }
+                doLast { println 'runtimeOnly: ' + sourceSets.main.runtimeClasspath.asPath }
             }
             task printMainCompileClassPath { 
-                doLast { println 'compile: ' + sourceSets.main.compileClasspath.asPath }
+                doLast { println 'implementation: ' + sourceSets.main.compileClasspath.asPath }
             }
         """)
 
         val result = build("printMainRuntimeClassPath", "printMainCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
 
             assertTrue(compileClasspath.contains("markdown.jar"))
             assertTrue(compileClasspath.contains("resources_en.jar"))
@@ -218,17 +125,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
             intellij.plugins = ["copyright", "${adjustWindowsPath(plugin?.canonicalPath ?: "")}"]
            
             task printMainRuntimeClassPath {
-                doLast { println "runtime: " + sourceSets.main.runtimeClasspath.asPath }
+                doLast { println "runtimeOnly: " + sourceSets.main.runtimeClasspath.asPath }
             }
             task printMainCompileClassPath {
-                doLast { println "compile: " + sourceSets.main.compileClasspath.asPath }
+                doLast { println "implementation: " + sourceSets.main.compileClasspath.asPath }
             }
         """)
 
         val result = build("printMainRuntimeClassPath", "printMainCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
 
             assertTrue(compileClasspath.contains("intellij-postfix.jar"))
             assertFalse(runtimeClasspath.contains("intellij-postfix.jar"))
@@ -240,17 +147,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
         buildFile.groovy("""
             intellij.plugins = ["com.jetbrains.changeReminder"]
             task printTestRuntimeClassPath {
-                doLast { println "runtime: " + sourceSets.test.runtimeClasspath.asPath }
+                doLast { println "runtimeOnly: " + sourceSets.test.runtimeClasspath.asPath }
             }
             task printTestCompileClassPath {
-                doLast { println "compile: " + sourceSets.test.compileClasspath.asPath }
+                doLast { println "implementation: " + sourceSets.test.compileClasspath.asPath }
             }
         """)
 
         val result = build("printTestRuntimeClassPath", "printTestCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
 
             assertTrue(compileClasspath.contains("vcs-changeReminder.jar"))
             assertTrue(runtimeClasspath.contains("vcs-changeReminder.jar"))
@@ -263,21 +170,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
     fun `add ant dependencies to classpath`() {
         buildFile.groovy("""
             task printTestRuntimeClassPath {
-                doLast {
-                    println "runtime: " + sourceSets.test.runtimeClasspath.asPath
-                }
+                doLast { println "runtimeOnly: " + sourceSets.test.runtimeClasspath.asPath }
             }
             
             task printTestCompileClassPath {
-                doLast {
-                    println "compile: " + sourceSets.test.compileClasspath.asPath
-                }
+                doLast { println "implementation: " + sourceSets.test.compileClasspath.asPath }
             }
         """)
 
         val result = build("printTestRuntimeClassPath", "printTestCompileClassPath")
-        val compileClasspath = result.output.lines().find { it.startsWith("compile:") } ?: ""
-        val runtimeClasspath = result.output.lines().find { it.startsWith("runtime:") } ?: ""
+        val compileClasspath = result.output.lines().find { it.startsWith("implementation:") } ?: ""
+        val runtimeClasspath = result.output.lines().find { it.startsWith("runtimeOnly:") } ?: ""
 
         assertTrue(compileClasspath.contains("ant.jar"))
         assertTrue(runtimeClasspath.contains("ant.jar"))
@@ -291,17 +194,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
             intellij.plugins = ['copyright', 'org.jetbrains.postfixCompletion:0.8-beta']
             
             task printTestRuntimeClassPath {
-                doLast { println 'runtime: ' + sourceSets.test.runtimeClasspath.asPath }
+                doLast { println 'runtimeOnly: ' + sourceSets.test.runtimeClasspath.asPath }
             }
             task printTestCompileClassPath {
-                doLast { println 'compile: ' + sourceSets.test.compileClasspath.asPath }
+                doLast { println 'implementation: ' + sourceSets.test.compileClasspath.asPath }
             }
         """)
 
         val result = build("printTestRuntimeClassPath", "printTestCompileClassPath")
         result.output.lines().let { lines ->
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
 
             assertTrue(compileClasspath.contains("copyright.jar"))
             assertTrue(runtimeClasspath.contains("copyright.jar"))
@@ -318,17 +221,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
             intellij.plugins = ['org.jetbrains.postfixCompletion:0.8-beta', 'copyright']
             
             task printMainRuntimeClassPath {
-                doLast { println 'runtime: ' + sourceSets.main.runtimeClasspath.asPath }
+                doLast { println 'runtimeOnly: ' + sourceSets.main.runtimeClasspath.asPath }
             }
             task printMainCompileClassPath {
-                doLast { println 'compile: ' + sourceSets.main.compileClasspath.asPath }
+                doLast { println 'implementation: ' + sourceSets.main.compileClasspath.asPath }
             }
         """)
 
         val result = build("printMainRuntimeClassPath", "printMainCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
 
             assertTrue(compileClasspath.contains("copyright.jar"))
             assertFalse(runtimeClasspath.contains("copyright.jar"))
@@ -345,17 +248,17 @@ class IntelliJPluginSpec : IntelliJPluginSpecBase() {
             intellij.plugins = ['com.intellij.copyright']
 
             task printMainRuntimeClassPath {
-                doLast { println 'runtime: ' + sourceSets.main.runtimeClasspath.asPath }
+                doLast { println 'runtimeOnly: ' + sourceSets.main.runtimeClasspath.asPath }
             }
             task printMainCompileClassPath {
-                doLast { println 'compile: ' + sourceSets.main.compileClasspath.asPath }
+                doLast { println 'implementation: ' + sourceSets.main.compileClasspath.asPath }
             }            
         """)
 
         val result = build("printMainRuntimeClassPath", "printMainCompileClassPath")
         result.output.lines().let { lines ->
-            val compileClasspath = lines.find { it.startsWith("compile:") } ?: ""
-            val runtimeClasspath = lines.find { it.startsWith("runtime:") } ?: ""
+            val runtimeClasspath = lines.find { it.startsWith("runtimeOnly:") } ?: ""
+            val compileClasspath = lines.find { it.startsWith("implementation:") } ?: ""
 
             assertTrue(compileClasspath.contains("copyright.jar"))
             assertFalse(runtimeClasspath.contains("copyright.jar"))

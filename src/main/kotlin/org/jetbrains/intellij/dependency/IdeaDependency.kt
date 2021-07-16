@@ -16,8 +16,8 @@ open class IdeaDependency(
     val extraDependencies: Collection<IdeaExtraDependency>,
 ) : Serializable {
 
-    private val formatVersion = 1
-    val jarFiles = collectJarFiles()
+    private val formatVersion = 2
+    val jarFiles = this.collectJarFiles()
 
     protected open fun collectJarFiles(): Collection<File> {
         if (classes.isDirectory) {
@@ -46,6 +46,7 @@ open class IdeaDependency(
         return fqn
     }
 
+    @Suppress("DuplicatedCode")
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false

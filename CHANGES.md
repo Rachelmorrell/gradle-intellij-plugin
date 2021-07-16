@@ -1,5 +1,44 @@
 # Changelog
 
+## next
+
+- Fix `prepareTestingSandbox` not running when test task is executed [#745](../../issues/745) by @abrooksv
+- Move signPlugin file name creation to lazy [#742](../../issues/742) by @brian-mcnamara
+
+## 1.1.3
+
+- Fixed dependency on `JavaScript` plugin [#674](../../issues/674)
+- Fixed `releaseType` resolving for Rider versions in `-EAP#-SNAPSHOT` format.
+- `runPluginVerifier`: verify required Java 11 environment for Plugin Verifier `1.260+`
+- `pluginVerifier` – remove support for old versions `< 1.255` hosted on Bintray
+- Fixed tests configuration – 'Config Directory' does not exist exception
+
+## 1.1.2
+
+- Use Gradle `ArchiveOperations` in `extractArchive` utils method [#681](../../issues/681)
+- Set minimal supported Gradle version to 6.6
+- Use JDOM for altering `updates.xml` in `PrepareSandboxTask` to keep existing content
+- Fixed incorrect output path of `JarSearchableOptionsTask` causing also duplicate entry exception [#678](../../issues/678)
+- Fixed incorrect plugin download URL for custom repositories [#688](../../issues/688)
+- Make `DownloadRobotServerPluginTask` pointing to the latest Robot Server Plugin available
+- Support Maven closure in `PluginsRepositories` block
+- `BuildSearchableOptionsTask` fails on macOS when resolving `javaHome` #[#696](../../issues/696)
+- `PrepareSandboxTask` doesn't depend on `JavaPlugin` dependencies #[#451](../../issues/451)
+- Remove `IntelliJPluginExtension.pluginsRepositories(block: Closure<Any>)` due to `ConfigureUtil` deprecation and a lack of typed parameters
+- Remove usage of deprecated methods and classes introduced in Gradle 7.1 #[#700](../../issues/700)
+
+## 1.0.0
+
+- Breaking changes guide: https://lp.jetbrains.com/gradle-intellij-plugin
+- Plugin Signing integration
+- Lazy Configuration support
+- Configuration Cache support
+- Task Configuration Avoidance support
+- better CI (GitHub Actions, Qodana, Dependabot)
+- Rewritten in Kotlin
+- property names cleanup (`*Repo` to `*Repository`, `*Directory` to `*Dir` – for the sake of consistency with Gradle)
+- Stepping away from Bintray and JCenter
+
 ## 0.7.3
 
 - migrate from bintray [#594](../../issues/594)

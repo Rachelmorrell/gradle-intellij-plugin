@@ -12,12 +12,11 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.internal.jvm.Jvm
 import org.gradle.internal.os.OperatingSystem
-import org.gradle.util.VersionNumber
 import org.jetbrains.intellij.VERSION_PATTERN
+import org.jetbrains.intellij.Version
 import org.jetbrains.intellij.getIdeJvmArgs
 import org.jetbrains.intellij.getIdeaSystemProperties
 import org.jetbrains.intellij.ideBuildNumber
-import org.jetbrains.intellij.resolveToolsJar
 import java.io.File
 
 @Suppress("UnstableApiUsage")
@@ -78,7 +77,7 @@ abstract class RunIdeBase(runAlways: Boolean) : JavaExec() {
     val projectExecutable: Property<String> = objectFactory.property(String::class.java)
 
     init {
-        main = "com.intellij.idea.Main"
+        mainClass.set("com.intellij.idea.Main")
         enableAssertions = true
         if (runAlways) {
             outputs.upToDateWhen { false }
@@ -88,10 +87,10 @@ abstract class RunIdeBase(runAlways: Boolean) : JavaExec() {
     @Override
     override fun exec() {
         workingDir = projectWorkingDir.get()
-        configureClasspath()
         configureSystemProperties()
         configureJvmArgs()
         executable(projectExecutable.get())
+        configureClasspath()
         super.exec()
     }
 
@@ -99,14 +98,13 @@ abstract class RunIdeBase(runAlways: Boolean) : JavaExec() {
         val ideDirFile = ideDir.get().asFile
 
         executable.takeUnless { it.isNullOrEmpty() }?.let {
-            project.file(resolveToolsJar(it)).takeIf(File::exists) ?: Jvm.current().toolsJar
+            resolveToolsJar(it).takeIf(File::exists) ?: Jvm.current().toolsJar
         }?.let {
             classpath += objectFactory.fileCollection().from(it)
         }
 
         val buildNumber = ideBuildNumber(ideDir.get().asFile).split('-').last()
-        val version = VersionNumber.parse(buildNumber)
-        if (version > VersionNumber.parse("203.0")) {
+        if (Version.parse(buildNumber) > Version.parse("203.0")) {
             classpath += objectFactory.fileCollection().from(
                     "$ideDirFile/lib/bootstrap.jar",
                     "$ideDirFile/lib/util.jar",
@@ -166,5 +164,14 @@ abstract class RunIdeBase(runAlways: Boolean) : JavaExec() {
 
     private fun configureJvmArgs() {
         jvmArgs = getIdeJvmArgs(this, jvmArgs ?: emptyList(), ideDir.get().asFile)
+    }
+
+    private fun resolveToolsJar(javaExec: String): File {
+        val binDir = File(javaExec).parent
+        val path = when {
+            OperatingSystem.current().isMacOsX -> "../../lib/tools.jar"
+            else -> "../lib/tools.jar"
+        }
+        return File(binDir, path)
     }
 }

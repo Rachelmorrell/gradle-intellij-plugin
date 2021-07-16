@@ -3,7 +3,6 @@ package org.jetbrains.intellij
 object IntelliJPluginConstants {
     const val GROUP_NAME = "intellij"
     const val EXTENSION_NAME = "intellij"
-    const val SIGNING_EXTENSION_NAME = "signing"
     const val DEFAULT_SANDBOX = "idea-sandbox"
     const val PATCH_PLUGIN_XML_TASK_NAME = "patchPluginXml"
     const val PLUGIN_XML_DIR_NAME = "patchedPluginXmlFiles"
@@ -24,17 +23,21 @@ object IntelliJPluginConstants {
 
     const val IDEA_CONFIGURATION_NAME = "idea"
     const val IDEA_PLUGINS_CONFIGURATION_NAME = "ideaPlugins"
+    const val INTELLIJ_DEFAULT_DEPENDENCIES_CONFIGURATION_NAME = "intellijDefaultDependencies"
 
-    //    const val Logger LOG = Logging.getLogger(IntelliJPlugin)
+    const val ANNOTATIONS_DEPENDENCY_VERSION = "21.0.0"
     const val DEFAULT_IDEA_VERSION = "LATEST-EAP-SNAPSHOT"
-    const val DEFAULT_INTELLIJ_REPOSITORY =
-        "https://cache-redirector.jetbrains.com/www.jetbrains.com/intellij-repository"
-    const val DEFAULT_JBR_REPO = "https://cache-redirector.jetbrains.com/intellij-jbr"
-    const val DEFAULT_INTELLIJ_PLUGIN_VERIFIER_REPOSITORY =
-        "https://cache-redirector.jetbrains.com/packages.jetbrains.team/maven/p/intellij-plugin-verifier/intellij-plugin-verifier"
-    const val OLD_INTELLIJ_PLUGIN_VERIFIER_REPOSITORY =
-        "https://cache-redirector.jetbrains.com/jetbrains.bintray.com/intellij-plugin-service"
-    const val DEFAULT_INTELLIJ_PLUGINS_REPOSITORY = "https://cache-redirector.jetbrains.com/plugins.jetbrains.com/maven"
+
+    const val CACHE_REDIRECTOR = "https://cache-redirector.jetbrains.com"
+    const val INTELLIJ_DEPENDENCIES = "$CACHE_REDIRECTOR/intellij-dependencies"
+    const val DEFAULT_INTELLIJ_REPOSITORY = "$CACHE_REDIRECTOR/www.jetbrains.com/intellij-repository"
+    const val DEFAULT_INTELLIJ_PLUGINS_REPOSITORY = "$CACHE_REDIRECTOR/plugins.jetbrains.com/maven"
+    const val DEFAULT_JBR_REPOSITORY = "$CACHE_REDIRECTOR/intellij-jbr"
+    const val PLUGIN_VERIFIER_REPOSITORY =
+        "$CACHE_REDIRECTOR/packages.jetbrains.team/maven/p/intellij-plugin-verifier/intellij-plugin-verifier"
+    const val MAVEN_REPOSITORY = "$CACHE_REDIRECTOR/repo1.maven.org/maven2"
+
     const val PLUGIN_PATH = "plugin.path"
+    const val VERSION_LATEST = "latest"
 }
 

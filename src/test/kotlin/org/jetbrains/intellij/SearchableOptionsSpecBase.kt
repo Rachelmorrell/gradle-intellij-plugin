@@ -55,12 +55,12 @@ abstract class SearchableOptionsSpecBase : IntelliJPluginSpecBase() {
             }
             
             @Override
-            public void apply() throws ConfigurationException {
+            public void apply() {
             }
         }
     """.trimIndent()
 
     fun getSearchableOptionsXml(jar: String) = File(getSearchableOptions(), "/$jar.jar/search/$jar.jar.searchableOptions.xml")
 
-    fun getSearchableOptions() = File(buildDirectory, IntelliJPluginConstants.SEARCHABLE_OPTIONS_DIR_NAME)
+    private fun getSearchableOptions() = File(buildDirectory, IntelliJPluginConstants.SEARCHABLE_OPTIONS_DIR_NAME)
 }

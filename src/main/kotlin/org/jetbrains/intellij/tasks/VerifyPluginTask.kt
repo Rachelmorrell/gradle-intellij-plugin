@@ -14,6 +14,7 @@ import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.VerificationTask
 import org.jetbrains.intellij.error
+import org.jetbrains.intellij.logCategory
 import org.jetbrains.intellij.warn
 import javax.inject.Inject
 
@@ -24,6 +25,8 @@ open class VerifyPluginTask @Inject constructor(
 
     @Input
     val ignoreFailures: Property<Boolean> = objectFactory.property(Boolean::class.java).convention(false)
+
+    private val context = logCategory()
 
     override fun getIgnoreFailures(): Boolean = ignoreFailures.get()
 
@@ -42,16 +45,16 @@ open class VerifyPluginTask @Inject constructor(
         val creationResult = pluginDir.get().let { IdePluginManager.createManager().createPlugin(it.asFile.toPath()) }
         when (creationResult) {
             is PluginCreationSuccess -> creationResult.warnings.forEach {
-                warn(this, it.message)
+                warn(context, it.message)
             }
             is PluginCreationFail -> creationResult.errorsAndWarnings.forEach {
                 if (it.level == PluginProblem.Level.ERROR) {
-                    error(this, it.message)
+                    error(context, it.message)
                 } else {
-                    warn(this, it.message)
+                    warn(context, it.message)
                 }
             }
-            else -> error(this, creationResult.toString())
+            else -> error(context, creationResult.toString())
         }
         val failBuild = creationResult !is PluginCreationSuccess || !ignoreWarnings.get() && creationResult.warnings.isNotEmpty()
         if (failBuild && !ignoreFailures.get()) {

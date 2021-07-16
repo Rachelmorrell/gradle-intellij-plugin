@@ -25,6 +25,10 @@
       "value": "badge-shield-io-github-release"
     },
     {
+      "type": "markup",
+      "value": "\n\n<img src=\"./.github/readme/gradle-intellij-plugin.png\" alt=\"Gradle IntelliJ Plugin\"/>"
+    },
+    {
       "type": "inbuilt",
       "value": "project-name"
     },
@@ -55,10 +59,6 @@
     {
       "type": "template",
       "value": "src/docs/configuration.md.templar"
-    },
-    {
-      "type": "template",
-      "value": "src/docs/build.gradle.md.templar"
     },
     {
       "type": "file",

@@ -1,70 +1,69 @@
 package org.jetbrains.intellij.dependency
 
-import com.fasterxml.jackson.dataformat.xml.XmlMapper
-import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper
-import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty
-import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.jetbrains.intellij.createPlugin
 import org.jetbrains.intellij.debug
-import org.jetbrains.intellij.parseXml
+import org.jetbrains.intellij.model.XmlExtractor
+import org.jetbrains.intellij.model.PluginsCache
+import org.jetbrains.intellij.model.PluginsCachePlugin
 import org.jetbrains.intellij.warn
 import java.io.File
 import java.io.Serializable
 
-class BuiltinPluginsRegistry(private val pluginsDirectory: File) : Serializable {
-
-    private val plugins = mutableMapOf<String, Plugin>()
+class BuiltinPluginsRegistry(private val pluginsDirectory: File, private val context: String?) : Serializable {
+    private val plugins = mutableMapOf<String, PluginsCachePlugin>()
     private val directoryNameMapping = mutableMapOf<String, String>()
 
+    @Transient
+    private val extractor = XmlExtractor<PluginsCache>()
+
     companion object {
-        fun fromDirectory(pluginsDirectory: File, loggingContext: Any) =
-            BuiltinPluginsRegistry(pluginsDirectory).apply {
-                if (!fillFromCache(loggingContext)) {
-                    debug(loggingContext, "Builtin registry cache is missing")
-                    fillFromDirectory(loggingContext)
-                    dumpToCache(loggingContext)
+        const val version = 1
+
+        fun fromDirectory(pluginsDirectory: File, context: String?) =
+            BuiltinPluginsRegistry(pluginsDirectory, context).apply {
+                if (!fillFromCache()) {
+                    debug(context, "Builtin registry cache is missing")
+                    fillFromDirectory()
+                    dumpToCache()
                 }
             }
     }
 
-    private fun fillFromCache(loggingContext: Any): Boolean {
+    private fun fillFromCache(): Boolean {
         val cache = cacheFile().takeIf { it.exists() } ?: return false
 
-        debug(loggingContext, "Builtin registry cache is found. Loading from $cache")
+        debug(context, "Builtin registry cache is found. Loading from: $cache")
         return try {
-            parseXml(cache, PluginsCache::class.java).plugin.forEach {
+            extractor.unmarshal(cache).plugins.forEach {
                 plugins[it.id] = it
                 directoryNameMapping[it.directoryName] = it.id
             }
             true
         } catch (t: Throwable) {
-            warn(loggingContext, "Cannot read builtin registry cache", t)
+            warn(context, "Cannot read builtin registry cache", t)
             false
         }
     }
 
-    private fun fillFromDirectory(loggingContext: Any) {
+    private fun fillFromDirectory() {
         pluginsDirectory.listFiles()?.apply {
             asSequence()
                 .filter { it.isDirectory }
-                .forEach { add(it, loggingContext) }
+                .forEach { add(it) }
         }
-        debug(loggingContext, "Builtin registry populated with ${plugins.size} plugins")
+        debug(context, "Builtin registry populated with ${plugins.size} plugins")
     }
 
-    private fun dumpToCache(loggingContext: Any) {
-        debug(loggingContext, "Dumping cache for builtin plugin")
+    private fun dumpToCache() {
+        debug(context, "Dumping cache for builtin plugin")
         try {
-            XmlMapper()
-                .registerKotlinModule()
-                .writeValue(cacheFile(), PluginsCache(plugins.values.toList()))
+            extractor.marshal(PluginsCache(plugins.values.toList()), cacheFile())
         } catch (t: Throwable) {
-            warn(loggingContext, "Failed to dump cache for builtin plugin", t)
+            warn(context, "Failed to dump cache for builtin plugin", t)
         }
     }
 
-    private fun cacheFile() = File(pluginsDirectory, "builtinRegistry.xml")
+    private fun cacheFile() = File(pluginsDirectory, "builtinRegistry-$version.xml")
 
     fun findPlugin(name: String): File? {
         val plugin = plugins[name] ?: plugins[directoryNameMapping[name]] ?: return null
@@ -84,19 +83,19 @@ class BuiltinPluginsRegistry(private val pluginsDirectory: File) : Serializable 
             val id = idsToProcess.removeAt(0)
             val plugin = plugins[id] ?: plugins[directoryNameMapping[id]] ?: continue
             if (result.add(id)) {
-                idsToProcess.addAll(plugin.dependencies.dependencies - result)
+                idsToProcess.addAll(plugin.dependencies - result)
             }
         }
 
         return result
     }
 
-    fun add(artifact: File, loggingContext: Any) {
-        debug(loggingContext, "Adding directory to plugins index: $artifact)")
-        val intellijPlugin = createPlugin(artifact, false, loggingContext) ?: return
+    fun add(artifact: File) {
+        debug(context, "Adding directory to plugins index: $artifact)")
+        val intellijPlugin = createPlugin(artifact, false, context) ?: return
         val id = intellijPlugin.pluginId ?: return
         val dependencies = intellijPlugin.dependencies.filter { !it.isOptional }.map { it.id }
-        val plugin = Plugin(id, artifact.name, Dependencies(dependencies))
+        val plugin = PluginsCachePlugin(id, artifact.name, dependencies)
 
         plugins[id] = plugin
         if (plugin.directoryName != id) {
@@ -104,23 +103,23 @@ class BuiltinPluginsRegistry(private val pluginsDirectory: File) : Serializable 
         }
     }
 
-    @JacksonXmlRootElement(localName = "plugins")
-    data class PluginsCache(
-        @JacksonXmlElementWrapper(useWrapping = false)
-        var plugin: List<Plugin> = emptyList(),
-    ) : Serializable
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
 
-    data class Plugin(
-        @JacksonXmlProperty(isAttribute = true)
-        val id: String,
-        @JacksonXmlProperty(isAttribute = true)
-        val directoryName: String,
-        val dependencies: Dependencies,
-    ) : Serializable
+        other as BuiltinPluginsRegistry
 
-    data class Dependencies(
-        @JacksonXmlElementWrapper(useWrapping = false)
-        @JacksonXmlProperty(localName = "dependency")
-        val dependencies: List<String> = emptyList(),
-    ) : Serializable
+        if (pluginsDirectory != other.pluginsDirectory) return false
+        if (plugins != other.plugins) return false
+        if (directoryNameMapping != other.directoryNameMapping) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = pluginsDirectory.hashCode()
+        result = 31 * result + plugins.hashCode()
+        result = 31 * result + directoryNameMapping.hashCode()
+        return result
+    }
 }
